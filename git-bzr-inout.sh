@@ -22,39 +22,44 @@ pull|push)
   # Parse arguments
 
   remote="$1"
-  branch="$2"
+  rbnh="$2"
+  lbnh="$3"
 
   [ -d "$remote" ] || die "bzr repository must be local"
 
-  [ -z "$branch" ] && branch="root:master"
+  [ -z "$rbnh" ] && die "Must specify bazaar branch"
 
-  if expr "$branch" : "[^:]*:.*" &>/dev/null
+  if [ -z "$lbnh" ]
   then
-    rbnh="$(echo $branch|cut -d ':' -f 1)"
-    lbnh="$(echo $branch|cut -d ':' -f 2)"
-  else
-    rbnh="$branch"
     if [ "$rbnh" = "root" ]; then
       lbnh="master"
     else
-      lbnh="$branch"
+      lbnh="$rbnh"
     fi
   fi
 
   # Setup/checkout marks tracking branch
 
   # First time?
-  if git branch --no-color|grep "^inout/$lbnh$" &>/dev/null
+  if git branch --no-color|grep "^[ \*] inout$" &>/dev/null
   then
     # no
-    git checkout "inout/$lbnh" || die "Failed to checkout inout/$lbnh"
+    git checkout "inout" || die "Failed to checkout inout/$lbnh"
 
-    gargs="--import-marks=$BASE/$lbnh.git"
+    gargs="--import-marks=$BASE/marks.git"
+    bargs="--import-marks=$BASE/marks.bzr"
+  elif git branch --no-color|grep "^origin/inout$" &>/dev/null
+  then
+    # yes (from clone)
+    git checkout -b "inout" "origin/inout" || die "Failed to checkout inout/$lbnh"
+
+    gargs="--import-marks=$BASE/marks.git"
+    bargs="--import-marks=$BASE/marks.bzr"
   else
     # yes
     echo "Initializing $lbnh"
 
-    git symbolic-ref HEAD "refs/heads/inout/$lbnh" \
+    git symbolic-ref HEAD "refs/heads/inout" \
     || die "Failed to create mark tracking branch"
     rm -f .git/index
   fi
@@ -74,26 +79,54 @@ case "$cmd" in
 pull)
   echo "Pull $rbnh as $lbnh from $remote"
 
-  mv tmp.git $lbnh.git || echo "Missing tmp.git???"
-
   cat << EOF > .msg
-$(basename $0) pull from $rbnh
+$(basename $0) pull from $rbnh as $lbnh
 
 remote $remote
 EOF
 
   pushd "$remote" &>/dev/null || die "Failed to cd to $remote"
 
-  bzr fast-export --plain -b $lbnh --marks=$BASE/$rbnh.bzr $rbnh | \
+  bzr fast-export --plain -b $lbnh --marks=$BASE/marks.bzr $rbnh | \
   git fast-import $gargs --export-marks=$BASE/tmp.git \
   || echo ">>>>>> Pull Error <<<<<<"
 
   popd &>/dev/null
 
-  sort -g $rbnh.bzr > tmp.bzr2 || die "Failed to sort bzr output"
-  mv tmp.bzr2 $rbnh.bzr || die "???"
+  mv tmp.git marks.git || echo "Missing tmp.git???"
 
-  git add $rbnh.bzr $lbnh.git || die "Failed to add $rbnh.bzr $lbnh.git"
+  sort -g marks.bzr > tmp.bzr || die "Failed to sort bzr output"
+  mv tmp.bzr marks.bzr || die "???"
+
+  git add marks.bzr marks.git || die "Failed to add marks.bzr marks.git"
+
+  if git status -a &>/dev/null
+  then
+    git commit -F .msg || die "Failed to commit marks changes"
+  else
+    echo "No changes"
+  fi
+
+  rm -f .msg
+  ;;
+push)
+  echo "Push $rbnh from $lbnh to $remote"
+
+  cat << EOF > .msg
+$(basename $0) push to $rbnh from $lbnh
+
+remote $remote
+EOF
+
+  git fast-export -M -C $gargs --export-marks=$BASE/tmp.git $lbnh | \
+  bzr fast-import $bargs --export-marks=$BASE/tmp.bzr - \
+  || echo ">>>>>> Push Error <<<<<<"
+
+  mv tmp.git marks.git || echo "Missing tmp.git???"
+
+  sort -g tmp.bzr > marks.bzr || die "Failed to sort bzr output"
+
+  git add marks.bzr marks.git || die "Failed to add marks.bzr marks.git"
 
   if git status -a &>/dev/null
   then
