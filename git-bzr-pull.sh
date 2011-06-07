@@ -17,28 +17,31 @@ export GIT_DIR="$PWD/.git"
 
 remote="$1"
 lbnh="$2"
+iobnh="$3"
 
 [ -d "$remote" ] || die "bzr repository must be local"
 
-if [ -z "$lbnh" ]
-then
+if [ -z "$lbnh" ]; then
   lbnh="master"
+fi
+if [ -z "$iobnh" ]; then
+  iobnh="inout"
 fi
 
 # Setup/checkout marks tracking branch
 
 # First time?
-if git branch --no-color|grep "^[ \*] inout$" &>/dev/null
+if git branch --no-color|grep "^[ \*] ${iobnh}$" &>/dev/null
 then
   # no
-  git checkout "inout" || die "Failed to checkout inout/$lbnh"
+  git checkout "$iobnh" || die "Failed to checkout ${iobnh}"
 
   gargs="--import-marks=$BASE/marks.git"
   bargs="--import-marks=$BASE/marks.bzr"
-elif git branch -r --no-color|grep "^[ \*] origin/inout$" &>/dev/null
+elif git branch -r --no-color|grep "^[ \*] origin/${iobnh}$" &>/dev/null
 then
   # yes (from clone)
-  git checkout -b "inout" "origin/inout" || die "Failed to checkout inout/$lbnh"
+  git checkout -b "${iobnh}" "origin/${iobnh}" || die "Failed to checkout origin/$lbnh"
 
   gargs="--import-marks=$BASE/marks.git"
   bargs="--import-marks=$BASE/marks.bzr"
@@ -46,7 +49,7 @@ else
   # yes
   echo "Initializing $lbnh"
 
-  git symbolic-ref HEAD "refs/heads/inout" \
+  git symbolic-ref HEAD "refs/heads/${iobnh}" \
   || die "Failed to create mark tracking branch"
   rm -f .git/index
 fi
@@ -91,12 +94,7 @@ mv tmp.bzr marks.bzr || die "???"
 
 git add marks.bzr marks.git || die "Failed to add marks.bzr marks.git"
 
-if git status -a &>/dev/null
-then
-  git commit -F .msg || die "Failed to commit marks changes"
-else
-  echo "No changes"
-fi
+git commit -F .msg
 
 rm -f .msg
 
