@@ -1,14 +1,14 @@
 #!/bin/bash
-set -x
+set -x -e
 
-function die() {
+die() {
   echo "$1" >&2
   exit 1
 }
 
 [ -d .git ] || die "Must be run from a normal git working directory"
 
-git status -a &>/dev/null && die "Git working directory has uncommited changes"
+git diff &>/dev/null || die "Git working directory has uncommited changes"
 
 BASE="$PWD"
 export GIT_DIR="$PWD/.git"
@@ -31,17 +31,18 @@ fi
 # Setup/checkout marks tracking branch
 
 # First time?
-if git branch --no-color|grep "^[ \*] ${iobnh}$" &>/dev/null
+
+if git branch --no-color | grep "^[ \*] ${iobnh}$" >/dev/null
 then
-  # no
-  git checkout "$iobnh" || die "Failed to checkout ${iobnh}"
+  echo "Use existing local branch"
+  git checkout "$iobnh"
 
   gargs="--import-marks=$BASE/marks.git"
   bargs="--import-marks=$BASE/marks.bzr"
-elif git branch -r --no-color|grep "^[ \*] origin/${iobnh}$" &>/dev/null
+elif git branch -r --no-color|grep "^[ \*] origin/${iobnh}$" >/dev/null
 then
-  # yes (from clone)
-  git checkout -b "${iobnh}" "origin/${iobnh}" || die "Failed to checkout origin/$lbnh"
+  echo "Start new local branch from origin"
+  git checkout -b "${iobnh}" "origin/${iobnh}"
 
   gargs="--import-marks=$BASE/marks.git"
   bargs="--import-marks=$BASE/marks.bzr"
@@ -49,8 +50,7 @@ else
   # yes
   echo "Initializing $lbnh"
 
-  git symbolic-ref HEAD "refs/heads/${iobnh}" \
-  || die "Failed to create mark tracking branch"
+  git symbolic-ref HEAD "refs/heads/${iobnh}"
   rm -f .git/index
 fi
 
@@ -66,13 +66,14 @@ $(basename $0) pull from $remote
 remote $remote
 EOF
 
-pushd "$remote" &>/dev/null || die "Failed to cd to $remote"
+CUR=`pwd`
+cd "$remote"
 
 bzr fast-export --plain -b $lbnh --marks=$BASE/marks.bzr . | \
 git fast-import $gargs --export-marks=$BASE/tmp.git \
 || echo ">>>>>> Pull Error <<<<<<"
 
-popd &>/dev/null
+cd "$CUR"
 
 mv tmp.git marks.git || echo "Missing tmp.git???"
 
